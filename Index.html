@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>南特派車申請</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1f2933; --muted:#616e7c; --line:#d9dee5;
+    --brand:#1f5fa8; --brand-soft:#e7f0fb; --ok:#1b7f4b; --ok-soft:#e5f5ec;
+    --bad:#b42318; --bad-soft:#fdecea; --warn:#9a6700; --warn-soft:#fff6db;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif}
+  header{background:var(--brand);color:#fff;padding:14px 16px}
+  header .wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  header .who{margin-left:auto;font-size:13px;opacity:.9}
+  .wrap{max-width:1080px;margin:0 auto}
+  nav{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  nav .wrap{display:flex;gap:4px;padding:0 12px;overflow-x:auto}
+  nav button{border:0;background:none;padding:12px 14px;font:inherit;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+  nav button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:700}
+  nav .spacer{flex:1}
+  main{padding:16px}
+  .grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start}
+  @media (max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card h2{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .card h2 .n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}
+  label .req{color:var(--bad)}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+  textarea{min-height:64px;resize:vertical}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--brand);background:var(--brand);color:#fff;padding:9px 16px;border-radius:7px;font:inherit;cursor:pointer;text-decoration:none}
+  .btn.ghost{background:#fff;color:var(--brand)}
+  .btn.danger{background:#fff;color:var(--bad);border-color:var(--bad)}
+  .btn.sm{padding:5px 10px;font-size:13px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.big{width:100%;justify-content:center;padding:12px;font-size:16px;font-weight:700}
+  .cars{display:grid;gap:10px}
+  .car{display:flex;gap:10px;align-items:flex-start;border:2px solid var(--line);border-radius:9px;padding:10px 12px;cursor:pointer;background:#fff}
+  .car input{width:auto;margin-top:4px}
+  .car.free{border-color:#b7e1c8}
+  .car.busy{border-color:#f4c7c3;background:var(--bad-soft);cursor:not-allowed}
+  .car.sel{border-color:var(--brand);background:var(--brand-soft)}
+  .car .t{font-weight:700}
+  .car .meta{font-size:13px;color:var(--muted)}
+  .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;margin-left:6px;font-weight:600}
+  .tag.ok{background:var(--ok-soft);color:var(--ok)}
+  .tag.bad{background:var(--bad);color:#fff}
+  .tag.gray{background:#eef0f3;color:var(--muted)}
+  .conf{font-size:13px;color:var(--bad);margin-top:4px}
+  .cap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .cap div{border-radius:8px;padding:8px 10px;font-size:14px}
+  .cap .ok{background:var(--ok-soft);color:var(--ok)}
+  .cap .bad{background:var(--bad-soft);color:var(--bad)}
+  .cap .idle{background:#eef0f3;color:var(--muted)}
+  .cap b{font-size:18px}
+  .msg{padding:10px 12px;border-radius:8px;margin:10px 0;font-size:14px}
+  .msg.bad{background:var(--bad-soft);color:var(--bad)}
+  .msg.warn{background:var(--warn-soft);color:var(--warn)}
+  .msg.info{background:var(--brand-soft);color:var(--brand)}
+  .day{list-style:none;margin:0;padding:0}
+  .day li{border-left:4px solid var(--brand);padding:6px 10px;margin-bottom:8px;background:#fafbfc;border-radius:0 6px 6px 0;font-size:14px}
+  .day li .tm{font-weight:700;font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f0f3f7;font-weight:600;white-space:nowrap}
+  td .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .st-ok{color:var(--ok);font-weight:700}
+  .st-x{color:var(--muted);text-decoration:line-through}
+  @media (max-width:700px){
+    table.resp thead{display:none}
+    table.resp tr{display:block;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;padding:6px 8px;background:#fff}
+    table.resp td{display:flex;gap:8px;border:0;padding:4px 0}
+    table.resp td::before{content:attr(data-h);flex:0 0 72px;color:var(--muted);font-size:13px}
+  }
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+  .overlay.show{display:flex}
+  .dialog{background:#fff;border-radius:12px;max-width:480px;width:100%;padding:22px}
+  .dialog h3{margin:0 0 8px;font-size:19px;color:var(--ok)}
+  .dialog .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .loading{position:fixed;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;z-index:30;font-weight:700;color:var(--brand)}
+  .loading.show{display:flex}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>🚌 南特派車申請</h1>
+  <span class="who" id="who">載入中…</span>
+</div></header>
+
+<nav><div class="wrap">
+  <button class="on" data-tab="new">新申請</button>
+  <button data-tab="mine">我的申請</button>
+  <button data-tab="all" class="hide" id="tabAll">全部申請（管理者）</button>
+  <span class="spacer"></span>
+  <button id="btnBlank" title="下載空白的派車申請單 Word 檔">⬇ 空白申請單</button>
+</div></nav>
+
+<main><div class="wrap">
+
+<!-- ===== 新申請 ===== -->
+<section id="tab-new">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2><span class="n">1</span>用車時間</h2>
+        <div class="row">
+          <div><label>出發日期 <span class="req">*</span></label><input type="date" id="startDate"></div>
+          <div><label>出發時間 <span class="req">*</span></label><input type="time" id="startTime" step="300" value="08:30"></div>
+        </div>
+        <div class="row">
+          <div><label>返回日期 <span class="req">*</span></label><input type="date" id="endDate"></div>
+          <div><label>返回時間 <span class="req">*</span></label><input type="time" id="endTime" step="300" value="12:00"></div>
+        </div>
+        <div class="muted">返回時間請抓回到學校的時間，以免車輛被重複安排。</div>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">2</span>乘車人數</h2>
+        <div class="row">
+          <div><label>一般學生</label><input type="number" id="students" min="0" value="0" inputmode="numeric"></div>
+          <div><label>輪椅生</label><input type="number" id="wheel" min="0" value="0" inputmode="numeric"></div>
+          <div><label>隨行教師</label><input type="number" id="teachers" min="0" value="1" inputmode="numeric"></div>
+        </div>
+        <div class="muted">「一般學生」請勿重複算入輪椅生；輪椅生會使用車上的輪椅固定位。</div>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">3</span>行程與申請人</h2>
+        <div class="row">
+          <div><label>目的地 <span class="req">*</span></label><input id="destination" placeholder="例：臺南市立圖書館新總館"></div>
+          <div><label>集合地點</label><input id="meet" value="本校"></div>
+        </div>
+        <div style="margin-bottom:10px"><label>事由／活動名稱 <span class="req">*</span></label><input id="purpose" placeholder="例：高職部社區適應課程校外教學"></div>
+        <div class="row">
+          <div><label>申請人姓名 <span class="req">*</span></label><input id="name"></div>
+          <div><label>處室／部別 <span class="req">*</span></label><input id="dept" list="depts" placeholder="例：高職部、學務處"></div>
+          <div><label>聯絡電話／分機</label><input id="phone"></div>
+        </div>
+        <datalist id="depts">
+          <option>教務處</option><option>學務處</option><option>總務處</option><option>輔導室</option>
+          <option>實習處</option><option>幼兒部</option><option>國小部</option><option>國中部</option><option>高職部</option>
+        </datalist>
+        <div><label>備註</label><textarea id="note" placeholder="例：需協助上下車、有學生需隨身攜帶藥品等"></textarea></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2><span class="n">4</span>選擇車輛</h2>
+        <div id="availMsg" class="msg info">請先選擇用車時間，系統會自動檢查車輛是否已被預約。</div>
+        <div class="cars" id="cars"></div>
+        <div class="cap" id="cap"></div>
+      </div>
+
+      <div class="card">
+        <h2>📅 當天派車情形</h2>
+        <ul class="day" id="day"><li class="muted" style="border:0;background:none">尚未查詢</li></ul>
+      </div>
+
+      <div id="submitErr" class="msg bad hide"></div>
+      <button class="btn big" id="btnSubmit" disabled>送出預約</button>
+      <p class="muted" style="text-align:center">送出後即預約成功，系統會寄送申請單 Word 檔到您的學校信箱。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 我的申請 / 全部申請 ===== -->
+<section id="tab-list" class="hide">
+  <div class="card">
+    <h2 id="listTitle">我的申請</h2>
+    <div id="listBody" class="muted">載入中…</div>
+  </div>
+</section>
+
+</div></main>
+
+<div class="overlay" id="done"><div class="dialog">
+  <h3>✅ 預約成功</h3>
+  <div id="doneInfo"></div>
+  <div class="acts">
+    <button class="btn" id="doneWord">⬇ 下載 Word</button>
+    <button class="btn ghost" id="donePrint">🖨 列印申請單</button>
+    <button class="btn ghost" id="doneClose">關閉</button>
+  </div>
+</div></div>
+
+<div class="loading" id="loading"><span id="loadingText">處理中…</span></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let INIT = null, AVAIL = null, selected = new Set(), lastId = null, timer = null, reqSeq = 0;
+
+/* ---------- 呼叫後端 ---------- */
+function call(fn, ...args){
+  return new Promise((resolve, reject) => {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(e => reject(e && e.message ? e : new Error(String(e))))[fn](...args);
+  });
+}
+function busy(on, text){ $('loading').classList.toggle('show', on); $('loadingText').textContent = text || '處理中…'; }
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function num(id){ return Math.max(0, parseInt($(id).value, 10) || 0); }
+
+/* ---------- 檔案下載與列印 ---------- */
+function toBlob(f){
+  const bin = atob(f.b64), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type: f.mime});
+}
+function saveFile(f){
+  const url = URL.createObjectURL(toBlob(f));
+  const a = document.createElement('a');
+  a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+async function download(id){
+  busy(true, '產生 Word 檔中…');
+  try { saveFile(await call('getBookingFile', id, 'docx')); }
+  catch(e){ alert(e.message); } finally { busy(false); }
+}
+async function printForm(id){
+  const w = window.open('', '_blank');   // 先開視窗，避免被瀏覽器擋下彈出視窗
+  if (w) w.document.write('<p style="font:16px sans-serif;padding:20px">申請單產生中，請稍候…</p>');
+  busy(true, '產生列印用申請單…');
+  try {
+    const f = await call('getBookingFile', id, 'pdf');
+    const url = URL.createObjectURL(toBlob(f));
+    if (w) { w.location.href = url; }
+    else { saveFile(f); alert('瀏覽器擋下了新視窗，已改為下載 PDF，請開啟後列印。'); }
+  } catch(e){ if (w) w.close(); alert(e.message); }
+  finally { busy(false); }
+}
+
+/* ---------- 初始化 ---------- */
+async function init(){
+  try {
+    INIT = await call('getInit');
+  } catch(e){
+    $('who').textContent = '';
+    document.querySelector('main .wrap').innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>';
+    return;
+  }
+  $('who').textContent = INIT.email + (INIT.isAdmin ? '（管理者）' : '');
+  if (INIT.isAdmin) $('tabAll').classList.remove('hide');
+  $('startDate').value = $('endDate').value = INIT.today;
+  $('startDate').min = $('endDate').min = INIT.today;
+  try {
+    const saved = JSON.parse(localStorage.getItem('carApplicant') || '{}');
+    ['name','dept','phone'].forEach(k => { if (saved[k]) $(k).value = saved[k]; });
+  } catch(e){}
+  renderCars();
+  checkAvail();
+}
+
+/* ---------- 車輛與容量 ---------- */
+function renderCars(){
+  const list = (AVAIL && AVAIL.vehicles) || INIT.vehicles.map(v => Object.assign({conflicts:null}, v));
+  $('cars').innerHTML = list.map(v => {
+    const isBusy = v.conflicts && v.conflicts.length;
+    const unknown = v.conflicts === null;
+    if (isBusy) selected.delete(v.code);
+    const sel = selected.has(v.code);
+    const st = unknown ? '<span class="tag gray">待查詢</span>' : isBusy ? '<span class="tag bad">已被預約</span>' : '<span class="tag ok">可預約</span>';
+    const conf = isBusy ? v.conflicts.map(c => '<div class="conf">⛔ ' + esc(c.start) + '–' + esc(c.end.slice(-5)) + '　' + esc(c.title) + '</div>').join('') : '';
+    return '<label class="car ' + (isBusy ? 'busy' : unknown ? '' : 'free') + (sel ? ' sel' : '') + '">' +
+      '<input type="checkbox" data-code="' + esc(v.code) + '"' + (sel ? ' checked' : '') + (isBusy || unknown ? ' disabled' : '') + '>' +
+      '<div><div class="t">' + esc(v.name) + st + '</div>' +
+      '<div class="meta">座位 ' + v.seats + ' 人・輪椅位 ' + v.wheel + ' 個' + (v.plate && v.plate !== '待填' ? '・' + esc(v.plate) : '') + (v.note ? '・' + esc(v.note) : '') + '</div>' +
+      conf + '</div></label>';
+  }).join('');
+  $('cars').querySelectorAll('input[type=checkbox]').forEach(cb => cb.addEventListener('change', () => {
+    cb.checked ? selected.add(cb.dataset.code) : selected.delete(cb.dataset.code);
+    renderCars();
+  }));
+  renderCap();
+}
+
+function renderCap(){
+  const list = (AVAIL && AVAIL.vehicles) || INIT.vehicles;
+  const chosen = list.filter(v => selected.has(v.code));
+  const needSeats = num('students') + num('teachers'), needWheel = num('wheel');
+  const seats = chosen.reduce((a,v) => a + v.seats, 0), wheels = chosen.reduce((a,v) => a + v.wheel, 0);
+  const cls = (need, have) => !chosen.length ? 'idle' : have >= need ? 'ok' : 'bad';
+  $('cap').innerHTML =
+    '<div class="' + cls(needSeats, seats) + '">座位　需要 <b>' + needSeats + '</b>／已選 <b>' + seats + '</b></div>' +
+    '<div class="' + cls(needWheel, wheels) + '">輪椅位　需要 <b>' + needWheel + '</b>／已選 <b>' + wheels + '</b></div>';
+
+  let hint = '';
+  if (AVAIL && !chosen.length && needSeats + needWheel > 0) {
+    const fit = AVAIL.vehicles.filter(v => !v.conflicts.length && v.seats >= needSeats && v.wheel >= needWheel);
+    hint = fit.length ? '建議車輛：' + fit.map(v => v.name).join('、') + '（單台即可容納）'
+                      : '沒有單台車可以容納全部人數，請勾選多台車。';
+  }
+  const ok = AVAIL && chosen.length && seats >= needSeats && wheels >= needWheel && needSeats + needWheel > 0;
+  $('btnSubmit').disabled = !ok;
+  $('cap').insertAdjacentHTML('beforeend', hint ? '<div class="idle" style="grid-column:1/-1">' + esc(hint) + '</div>' : '');
+}
+
+/* ---------- 衝突查詢 ---------- */
+function scheduleCheck(){ clearTimeout(timer); timer = setTimeout(checkAvail, 400); }
+async function checkAvail(){
+  const q = {startDate:$('startDate').value, startTime:$('startTime').value, endDate:$('endDate').value, endTime:$('endTime').value};
+  if (!q.startDate || !q.startTime || !q.endDate || !q.endTime) return;
+  const my = ++reqSeq;
+  $('availMsg').className = 'msg info'; $('availMsg').textContent = '查詢行事曆中…';
+  try {
+    const r = await call('getAvailability', q);
+    if (my !== reqSeq) return;            // 只採用最新一次查詢
+    if (!r.ok){ AVAIL = null; $('availMsg').className = 'msg bad'; $('availMsg').textContent = r.msg; renderCars(); return; }
+    AVAIL = r;
+    const free = r.vehicles.filter(v => !v.conflicts.length).length;
+    $('availMsg').className = free ? 'msg info' : 'msg warn';
+    $('availMsg').textContent = free ? '這個時段有 ' + free + ' 台車可以預約。' : '這個時段所有車輛都已被預約，請改時間或洽總務處。';
+    renderCars();
+    renderDay(r.day);
+  } catch(e){
+    if (my !== reqSeq) return;
+    AVAIL = null; $('availMsg').className = 'msg bad'; $('availMsg').textContent = e.message; renderCars();
+  }
+}
+function renderDay(day){
+  $('day').innerHTML = day.length
+    ? day.map(d => '<li><span class="tm">' + esc(d.start.slice(-5)) + '–' + esc(d.end.slice(-5)) + '</span>　' + esc(d.title) + '</li>').join('')
+    : '<li class="muted" style="border:0;background:none">當天尚無其他派車，可放心安排。</li>';
+}
+
+/* ---------- 送出 ---------- */
+async function submit(){
+  const f = {
+    startDate:$('startDate').value, startTime:$('startTime').value, endDate:$('endDate').value, endTime:$('endTime').value,
+    students:num('students'), wheel:num('wheel'), teachers:num('teachers'),
+    destination:$('destination').value, meet:$('meet').value, purpose:$('purpose').value,
+    name:$('name').value, dept:$('dept').value, phone:$('phone').value, note:$('note').value,
+    vehicles:[...selected],
+  };
+  const missing = [['destination','目的地'],['purpose','事由'],['name','申請人姓名'],['dept','處室']].filter(([k]) => !String(f[k]).trim()).map(x => x[1]);
+  if (missing.length){ showErr('請填寫：' + missing.join('、')); return; }
+  showErr('');
+  try { localStorage.setItem('carApplicant', JSON.stringify({name:f.name, dept:f.dept, phone:f.phone})); } catch(e){}
+  busy(true, '送出中，正在建立行事曆與申請單…');
+  try {
+    const r = await call('submitBooking', f);
+    lastId = r.id;
+    $('doneInfo').innerHTML =
+      '<p>申請編號：<b>' + esc(r.id) + '</b><br>用車時間：' + esc(r.when) + '<br>車輛：' + esc(r.cars) + '</p>' +
+      (r.mailed ? '<p class="muted">申請單 Word 檔已寄到您的學校信箱。</p>' : '<p class="msg warn">寄信失敗，請直接下載申請單。</p>');
+    $('done').classList.add('show');
+    ['destination','purpose','note'].forEach(k => $(k).value = '');
+    selected.clear();
+    checkAvail();
+  } catch(e){ showErr(e.message); checkAvail(); }
+  finally { busy(false); }
+}
+function showErr(m){ $('submitErr').textContent = m; $('submitErr').classList.toggle('hide', !m); }
+
+/* ---------- 申請清單 ---------- */
+async function loadList(all){
+  $('listTitle').textContent = all ? '全部申請' : '我的申請';
+  $('listBody').innerHTML = '<span class="muted">載入中…</span>';
+  try {
+    const r = await call('listBookings', all);
+    if (!r.rows.length){ $('listBody').innerHTML = '<p class="muted">目前沒有申請紀錄。</p>'; return; }
+    $('listBody').innerHTML = '<table class="resp"><thead><tr><th>編號</th><th>用車時間</th>' + (all ? '<th>申請人</th>' : '') +
+      '<th>目的地／事由</th><th>人數</th><th>車輛</th><th>狀態</th><th>操作</th></tr></thead><tbody>' +
+      r.rows.map(x => '<tr>' +
+        '<td data-h="編號">' + esc(x.id) + '</td>' +
+        '<td data-h="時間">' + esc(x.when) + '</td>' +
+        (all ? '<td data-h="申請人">' + esc(x.applicant) + '</td>' : '') +
+        '<td data-h="目的地"><b>' + esc(x.destination) + '</b><br><span class="muted">' + esc(x.purpose) + '</span></td>' +
+        '<td data-h="人數">' + esc(x.people) + '</td>' +
+        '<td data-h="車輛">' + esc(x.cars) + '</td>' +
+        '<td data-h="狀態" class="' + (x.status === '已預約' ? 'st-ok' : 'st-x') + '">' + esc(x.status) + '</td>' +
+        '<td data-h="操作"><div class="acts">' +
+          '<button class="btn sm ghost" data-act="word" data-id="' + esc(x.id) + '">Word</button>' +
+          '<button class="btn sm ghost" data-act="print" data-id="' + esc(x.id) + '">列印</button>' +
+          (x.canCancel ? '<button class="btn sm danger" data-act="cancel" data-id="' + esc(x.id) + '">取消</button>' : '') +
+        '</div></td></tr>').join('') + '</tbody></table>';
+  } catch(e){ $('listBody').innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>'; }
+}
+let listAll = false;
+$('listBody').addEventListener('click', async ev => {
+  const b = ev.target.closest('button[data-act]'); if (!b) return;
+  const id = b.dataset.id;
+  if (b.dataset.act === 'word') download(id);
+  if (b.dataset.act === 'print') printForm(id);
+  if (b.dataset.act === 'cancel'){
+    if (!confirm('確定要取消 ' + id + ' 嗎？行事曆上的預約也會一併刪除。')) return;
+    busy(true, '取消中…');
+    try { await call('cancelBooking', id); await loadList(listAll); }
+    catch(e){ alert(e.message); } finally { busy(false); }
+  }
+});
+
+/* ---------- 事件綁定 ---------- */
+document.querySelectorAll('nav button[data-tab]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button[data-tab]').forEach(x => x.classList.toggle('on', x === b));
+  const t = b.dataset.tab;
+  $('tab-new').classList.toggle('hide', t !== 'new');
+  $('tab-list').classList.toggle('hide', t === 'new');
+  if (t !== 'new'){ listAll = t === 'all'; loadList(listAll); }
+}));
+$('startDate').addEventListener('change', () => {
+  if (!$('endDate').value || $('endDate').value < $('startDate').value) $('endDate').value = $('startDate').value;
+  $('endDate').min = $('startDate').value;
+  scheduleCheck();
+});
+['startTime','endDate','endTime'].forEach(id => $(id).addEventListener('change', scheduleCheck));
+['students','wheel','teachers'].forEach(id => $(id).addEventListener('input', renderCap));
+$('btnSubmit').addEventListener('click', submit);
+$('doneClose').addEventListener('click', () => $('done').classList.remove('show'));
+$('doneWord').addEventListener('click', () => download(lastId));
+$('donePrint').addEventListener('click', () => printForm(lastId));
+$('btnBlank').addEventListener('click', async () => {
+  busy(true, '產生空白申請單…');
+  try { saveFile(await call('getBlankTemplate')); } catch(e){ alert(e.message); } finally { busy(false); }
+});
+
+init();
+</script>
+</body>
+</html>
