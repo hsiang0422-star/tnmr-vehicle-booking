@@ -55,6 +55,8 @@
   .tag.gray{background:#eef0f3;color:var(--muted)}
   .conf{font-size:13px;color:var(--bad);margin-top:4px}
   .pend{font-size:13px;color:var(--warn);margin-top:4px}
+  .legend{margin:0 0 6px;font-size:14px}
+  .lg{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px}
   .st-wait{color:var(--warn);font-weight:700}
   .calwrap{position:relative;width:100%;height:680px;background:#fff;border-radius:8px;overflow:hidden}
   .calwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
@@ -221,7 +223,8 @@
 <section id="tab-cal" class="hide">
   <div class="card">
     <h2>📅 派車行事曆</h2>
-    <p class="muted">這裡只顯示總務處已核准的派車。待審中的申請請到「我的申請」查看。</p>
+    <p class="legend"><span class="lg" style="background:#4285f4"></span>已核准（已排入派車）　<span class="lg" style="background:#f6bf26"></span>待審（已申請，尚未確認）</p>
+    <p class="muted">待審的活動標題會以【待審】開頭；總務處核准或退回後，顏色與內容會自動更新。</p>
     <div class="calwrap"><iframe id="calFrame" scrolling="no"></iframe></div>
   </div>
 </section>

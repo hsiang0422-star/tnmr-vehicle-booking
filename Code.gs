@@ -55,7 +55,7 @@ function setup() {
 
   if (!p.getProperty('CAL_ID')) {
     const cal = CalendarApp.createCalendar(CFG.CAL_NAME, {
-      summary: CFG.SCHOOL + ' 派車行事曆（僅顯示總務處已核准的派車，由派車申請系統自動維護）',
+      summary: CFG.SCHOOL + ' 派車行事曆（藍色為已核准、黃色為待審，由派車申請系統自動維護）',
       timeZone: CFG.TZ,
       color: CalendarApp.Color.BLUE,
     });
@@ -252,6 +252,7 @@ function eventInfo_(ev, vehicles) {
     end: fmt_(ev.getEndTime(), 'MM/dd HH:mm'),
     vehicles: eventVehicles_(ev, vehicles),
     bookingId: ev.getTag('bookingId') || '',
+    status: isApproved_(ev) ? 'approved' : 'pending',
   };
 }
 
@@ -282,7 +283,7 @@ function getAvailability(q) {
 
   const vehicles = getVehicles_();
   const busy = {};
-  overlapping_(s, e).forEach(ev => {
+  overlapping_(s, e).filter(isApproved_).forEach(ev => {
     const info = eventInfo_(ev, vehicles);
     info.vehicles.forEach(code => { (busy[code] = busy[code] || []).push(info); });
   });
@@ -342,7 +343,7 @@ function submitBooking(f) {
   lock.waitLock(30000);
   try {
     const codes = chosen.map(v => v.code);
-    const clash = overlapping_(s, e).filter(ev => eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
+    const clash = overlapping_(s, e).filter(ev => isApproved_(ev) && eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
     if (clash.length) {
       throw new Error('所選車輛在這個時段已有核准的派車：' + clash.map(ev => ev.getTitle()).join('、') + '。請重新查詢後再送出。');
     }
@@ -378,12 +379,20 @@ function submitBooking(f) {
     const docx = exportBlob_(docId, 'docx', id + '_派車申請單.docx');
     const docxFile = DriveApp.getFolderById(prop_('DOCS_FOLDER_ID')).createFile(docx);
 
-    sheet.appendRow([
+    const row = [
       id, now, email, data['申請人'], data['處室'], data['聯絡電話'],
       s, e, data['集合地點'], data['目的地'], data['事由'],
       students, wheel, teachers, total, carText,
       ST.WAIT, '', docId, docxFile.getId(), data['備註'], '', '', codes.join(','),
-    ]);
+    ];
+    // 行事曆先放一筆黃色「待審」活動，核准後才改成藍色已核准
+    const pendEv = cal_().createEvent(titleFor_(row, ST.WAIT), s, e, { location: row[9], description: eventDesc_(row) });
+    pendEv.setTag('vehicles', codes.join(','));
+    pendEv.setTag('bookingId', id);
+    pendEv.setTag('status', 'pending');
+    pendEv.setColor(CalendarApp.EventColor.YELLOW);
+    row[17] = pendEv.getId();
+    sheet.appendRow(row);
 
     // 通知老師（確認信，尚未附 Word；核准後才附）
     let mailed = true;
@@ -425,31 +434,23 @@ function approveBooking(id) {
     const codes = String(r[23] || '').split(',').filter(Boolean);
     if (!codes.length) throw new Error('這筆申請沒有車輛代號，無法核准，請確認試算表。');
     const vehicles = getVehicles_();
-    const clash = overlapping_(s, e).filter(ev => eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
+    const clash = overlapping_(s, e).filter(ev => isApproved_(ev) && eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
     if (clash.length) {
       throw new Error('核准失敗，所選車輛已有其他核准的派車：' + clash.map(ev => ev.getTitle()).join('、') + '。請退回此申請。');
     }
 
-    const ev = cal_().createEvent(
-      '【' + codes.join('、') + '】' + r[9] + '－' + r[3] + '（' + r[4] + '）',
-      s, e,
-      {
-        location: String(r[9]),
-        description: [
-          '申請編號：' + r[0],
-          '事由：' + r[10],
-          '申請人：' + r[3] + '（' + r[4] + '）' + r[2] + ' ' + r[5],
-          '集合地點：' + r[8],
-          '人數：一般學生 ' + r[11] + '、輪椅生 ' + r[12] + '、隨行教師 ' + r[13] + '，共 ' + r[14] + ' 人',
-          '車輛：' + r[15],
-          r[20] ? '備註：' + r[20] : '',
-        ].filter(Boolean).join('\n'),
-        guests: String(r[2]),
-        sendInvites: false,
-      }
-    );
-    ev.setTag('vehicles', codes.join(','));
-    ev.setTag('bookingId', String(r[0]));
+    // 把送出時建立的黃色待審活動改成藍色已核准；找不到就重建
+    let ev = findEvent_(r[17]);
+    if (ev) {
+      ev.setTitle(titleFor_(r, ST.OK));
+      ev.setDescription(eventDesc_(r));
+    } else {
+      ev = cal_().createEvent(titleFor_(r, ST.OK), s, e, { location: String(r[9]), description: eventDesc_(r) });
+      ev.setTag('vehicles', codes.join(','));
+      ev.setTag('bookingId', String(r[0]));
+    }
+    ev.setTag('status', 'approved');
+    ev.setColor(CalendarApp.EventColor.BLUE);
 
     found.sheet.getRange(found.row, 17).setValue(ST.OK);
     found.sheet.getRange(found.row, 18).setValue(ev.getId());
@@ -476,6 +477,8 @@ function rejectBooking(id, reason) {
     const found = findRow_(id);
     const r = found.r;
     if (String(r[16]) !== ST.WAIT) throw new Error('這筆目前狀態為「' + r[16] + '」，無法退回。');
+    const pev = findEvent_(r[17]);
+    if (pev) pev.deleteEvent();
     found.sheet.getRange(found.row, 17).setValue(ST.BACK);
     found.sheet.getRange(found.row, 21).setValue(String(r[20] || '') + (r[20] ? '；' : '') + '退回原因：' + reason);
     found.sheet.getRange(found.row, 22, 1, 2).setValues([[adminEmail, new Date()]]);
@@ -560,16 +563,39 @@ function cancelBooking(id) {
   checkOwner_(email, found.r);
   const st = String(found.r[16]);
   if (st !== ST.WAIT && st !== ST.OK) throw new Error('這筆申請目前狀態為「' + st + '」，不能取消。');
-  if (st === ST.OK && found.r[17]) {
-    try {
-      const ev = cal_().getEventById(String(found.r[17]));
-      if (ev) ev.deleteEvent();
-    } catch (e) { console.error(e); }
-  }
+  const cev = findEvent_(found.r[17]);
+  if (cev) cev.deleteEvent();
   found.sheet.getRange(found.row, 17).setValue(ST.CANCEL);
   found.sheet.getRange(found.row, 21).setValue(
     String(found.r[20] || '') + (found.r[20] ? '；' : '') + '取消：' + email + ' ' + fmt_(new Date(), 'yyyy/MM/dd HH:mm'));
   return true;
+}
+
+/* ======================== 行事曆輔助 ======================== */
+
+/** 手動建立的活動沒有 status 標籤，視為已核准。 */
+function isApproved_(ev) { return ev.getTag('status') !== 'pending'; }
+
+function titleFor_(r, st) {
+  const codes = String(r[23] || '').split(',').filter(Boolean).join('、');
+  return (st === ST.WAIT ? '【待審】' : '') + '【' + codes + '】' + r[9] + '－' + r[3] + '（' + r[4] + '）';
+}
+
+function eventDesc_(r) {
+  return [
+    '申請編號：' + r[0],
+    '事由：' + r[10],
+    '申請人：' + r[3] + '（' + r[4] + '）' + r[2] + ' ' + r[5],
+    '集合地點：' + r[8],
+    '人數：一般學生 ' + r[11] + '、輪椅生 ' + r[12] + '、隨行教師 ' + r[13] + '，共 ' + r[14] + ' 人',
+    '車輛：' + r[15],
+    r[20] ? '備註：' + r[20] : '',
+  ].filter(Boolean).join('\n');
+}
+
+function findEvent_(eid) {
+  if (!eid) return null;
+  try { return cal_().getEventById(String(eid)); } catch (e) { return null; }
 }
 
 /* ======================== 信件與文件 ======================== */
