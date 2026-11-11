@@ -68,14 +68,16 @@ function setup() {
     bookings.setFrozenRows(1);
 
     const vehicles = ss.insertSheet(CFG.SHEET_VEHICLES);
-    vehicles.getRange(1, 1, 4, 7).setValues([
-      ['車輛代號', '車輛名稱', '車牌', '座位數(不含駕駛)', '輪椅位', '啟用', '說明'],
-      ['A', '一號車', '待填', 20, 2, true, '數字待確認'],
-      ['B', '二號車', '待填', 15, 4, true, '數字待確認'],
-      ['C', '三號車', '待填', 8, 1, true, '數字待確認'],
+    vehicles.getRange(1, 1, 6, 7).setValues([
+      ['車輛代號', '車輛名稱', '車牌', '座位數', '輪椅位', '啟用', '說明'],
+      ['L', '大型巴士', '待填', 29, 3, true, ''],
+      ['MA', '中型巴士A', '待填', 12, 1, true, ''],
+      ['MB', '中型巴士B', '待填', 9, 2, true, ''],
+      ['MC', '中型巴士C', '待填', 9, 2, true, ''],
+      ['S', '小校車', '待填', 6, 0, true, ''],
     ]);
     vehicles.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#e8eef7');
-    vehicles.getRange(2, 6, 3, 1).insertCheckboxes();
+    vehicles.getRange(2, 6, 5, 1).insertCheckboxes();
     vehicles.setFrozenRows(1);
 
     const settings = ss.insertSheet(CFG.SHEET_SETTINGS);

@@ -88,6 +88,14 @@
   .loading{position:fixed;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;z-index:30;font-weight:700;color:var(--brand)}
   .loading.show{display:flex}
   .hide{display:none!important}
+  .notice{border-left:5px solid var(--warn);background:var(--warn-soft)}
+  .notice h2{color:var(--warn)}
+  .notice .basis{font-size:13px;color:var(--muted);margin:-4px 0 10px}
+  .notice h3{font-size:14px;margin:12px 0 4px;color:var(--ink)}
+  .notice ol,.notice ul{margin:0 0 4px;padding-left:1.4em;font-size:14px}
+  .notice li{margin-bottom:3px}
+  .notice .sub{list-style:none;padding-left:0}
+  .notice .sub li{margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -108,6 +116,37 @@
 
 <!-- ===== 新申請 ===== -->
 <section id="tab-new">
+  <div class="card notice">
+    <h2>📌 派車注意事項</h2>
+    <div class="basis">依行政院「車輛管理手冊」及本校公務車管理要點第六條、第七條辦理。</div>
+
+    <h3>一、派車調度原則</h3>
+    <ol>
+      <li>車輛管理人員，除臨時緊急用車得自由調度外，應按照各單位送到派車單先後緩急依次調派。</li>
+      <li>派車單有用車事由不詳、申請單位主管未核章、擅自塗改到達地點及日期不符等情形者，車輛管理人員得拒絕派車。</li>
+    </ol>
+
+    <h3>二、派車項目</h3>
+    <ol class="sub">
+      <li>（一）例行派車：申請者請於開學前一週，將簽文及派車申請單送至總務處辦理。</li>
+      <li>（二）平常派車：申請者除上網登錄外，請於派車前一週將派車單送至總務處，才算完成派車程序。</li>
+      <li>（三）臨時緊急派車：請先徵得派車單位主管同意，申請者於派車前後 24 小時內，將派車單送至總務處。</li>
+    </ol>
+
+    <h3>三、派遣方式</h3>
+    <ol class="sub">
+      <li>（一）平日本校外聘專職司機有四位，校車有一輛大型巴士、三輛中型巴士、一輛廂型車（小校車）。大型巴士配備座位 29 個、輪椅 3 輛；中型巴士 A 為座位 12 個、輪椅 1 輛；中型巴士 B 為座位 9 個、輪椅 2 輛；中型巴士 C 為座位 9 個、輪椅 2 輛；小校車 6 人。</li>
+      <li>（二）若有無法配合調派司機的時間，請申請單位自行外聘合格司機駕駛本校校車，而所需費用由申請單位另覓經費支應。</li>
+      <li>（三）依本校校外教學實施要點之注意事項第四點，校外教學以 1 日內往返且目的地距離學校單程不超過 50 公里為原則，最早在 8:30 出發，14:30 返回校內為原則。</li>
+      <li>（四）各單位有派車需求時，請先行與財管幹事聯絡討論相關事宜，感謝配合。</li>
+    </ol>
+
+    <h3>四、聯絡窗口</h3>
+    <ul>
+      <li>若有任何問題，請洽總務處財管幹事 李慧玲，謝謝。</li>
+    </ul>
+  </div>
+
   <div class="grid">
     <div>
       <div class="card">
