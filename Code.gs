@@ -1,9 +1,9 @@
 /**
  * 國立臺南特殊教育學校 派車申請系統（Google Apps Script 網頁應用程式）
  *
- * 第一次使用：在 Apps Script 編輯器選 setup 執行一次，
- * 會自動建立「南特派車行事曆」、「派車申請紀錄」試算表、資料夾與暫用 Word 範本。
- * 之後依 README 部署為網頁應用程式。
+ * 流程：老師送出 → 試算表記為「待審核」→ 總務處（管理者）核准 → 排入「南特派車行事曆」並寄出含 Word 的通知
+ *
+ * 第一次使用：在 Apps Script 編輯器選 setup 執行一次。
  */
 
 const CFG = {
@@ -16,12 +16,16 @@ const CFG = {
   SHEET_SETTINGS: '設定',
 };
 
+// 欄位順序很重要：程式用位置存取（第 1 欄 = index 0）
 const BOOKING_HEADERS = [
-  '申請編號', '送出時間', '申請人Email', '申請人', '處室', '聯絡電話',
-  '出發時間', '返回時間', '集合地點', '目的地', '事由',
-  '一般學生', '輪椅生', '隨行教師', '總人數', '車輛',
-  '狀態', '行事曆事件ID', '申請單文件ID', 'Word檔ID', '備註',
+  '申請編號', '送出時間', '申請人Email', '申請人', '處室', '聯絡電話',   // 0-5
+  '出發時間', '返回時間', '集合地點', '目的地', '事由',                  // 6-10
+  '一般學生', '輪椅生', '隨行教師', '總人數', '車輛',                    // 11-15
+  '狀態', '行事曆事件ID', '申請單文件ID', 'Word檔ID', '備註',            // 16-20
+  '審核人', '審核時間', '車輛代號',                                      // 21-23
 ];
+
+const ST = { WAIT: '待審核', OK: '已核准', BACK: '已退回', CANCEL: '已取消' };
 
 /* ======================== 網頁進入點 ======================== */
 
@@ -51,7 +55,7 @@ function setup() {
 
   if (!p.getProperty('CAL_ID')) {
     const cal = CalendarApp.createCalendar(CFG.CAL_NAME, {
-      summary: CFG.SCHOOL + ' 派車預約行事曆（由派車申請系統自動維護）',
+      summary: CFG.SCHOOL + ' 派車行事曆（僅顯示總務處已核准的派車，由派車申請系統自動維護）',
       timeZone: CFG.TZ,
       color: CalendarApp.Color.BLUE,
     });
@@ -83,8 +87,8 @@ function setup() {
     const settings = ss.insertSheet(CFG.SHEET_SETTINGS);
     settings.getRange(1, 1, 3, 3).setValues([
       ['項目', '值', '說明'],
-      ['管理者Email', Session.getEffectiveUser().getEmail(), '可看全部申請、取消任何申請；多位用逗號分隔'],
-      ['通知副本Email', '', '每筆申請成功時副本寄送（例如總務處、學務處交通車承辦），多位用逗號分隔'],
+      ['管理者Email', Session.getEffectiveUser().getEmail(), '總務處人員：負責核准／退回申請，可看全部申請。多位用逗號分隔'],
+      ['通知副本Email', '', '每筆申請核准時副本寄送（例如學務處交通車承辦），多位用逗號分隔'],
     ]);
     settings.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#e8eef7');
     settings.setColumnWidth(2, 320);
@@ -104,7 +108,7 @@ function setup() {
 
 /** 改用正式範本：把 Word 範本存成 Google 文件後，把文件 ID 填進來執行一次。 */
 function setTemplate(docId) {
-  DocumentApp.openById(docId); // 確認可開啟
+  DocumentApp.openById(docId);
   PropertiesService.getScriptProperties().setProperty('TEMPLATE_ID', docId);
   Logger.log('已改用範本：' + docId);
 }
@@ -187,6 +191,11 @@ function splitEmails_(s) {
 function isAdmin_(email) {
   return splitEmails_(settings_()['管理者Email']).indexOf(email) >= 0;
 }
+function requireAdmin_() {
+  const email = requireUser_();
+  if (!isAdmin_(email)) throw new Error('只有總務處管理者可以執行此操作。');
+  return email;
+}
 
 function getVehicles_() {
   const values = ss_().getSheetByName(CFG.SHEET_VEHICLES).getDataRange().getValues();
@@ -200,6 +209,13 @@ function getVehicles_() {
       wheel: Number(r[4]) || 0,
       note: String(r[6] || '').trim(),
     }));
+}
+
+function allRows_() {
+  const sh = ss_().getSheetByName(CFG.SHEET_BOOKINGS);
+  const n = sh.getLastRow() - 1;
+  if (n < 1) return [];
+  return sh.getRange(2, 1, n, BOOKING_HEADERS.length).getValues();
 }
 
 function parseDT_(date, time) {
@@ -219,7 +235,7 @@ function rocRange_(s, e) {
   return roc_(s) + ' ' + fmt_(s, 'HH:mm') + ' 至 ' + (sameDay ? '' : roc_(e) + ' ') + fmt_(e, 'HH:mm');
 }
 
-/** 判斷某個行事曆事件佔用哪些車輛：系統建立的看標籤；手動建立的看標題是否含【代號】或車名。 */
+/** 行事曆事件佔用哪些車：系統建立的看標籤；手動建立的看標題是否含【代號】或車名。 */
 function eventVehicles_(ev, vehicles) {
   const tag = ev.getTag('vehicles');
   if (tag) return tag.split(',').filter(Boolean);
@@ -253,10 +269,11 @@ function getInit() {
     school: CFG.SCHOOL,
     vehicles: getVehicles_(),
     today: fmt_(new Date(), 'yyyy-MM-dd'),
+    calId: prop_('CAL_ID'),
   };
 }
 
-/** 查詢時段內每台車是否可用，以及當天所有派車。 */
+/** 查詢時段內每台車：已核准的派車（紅）與待審中的申請（黃）。 */
 function getAvailability(q) {
   requireUser_();
   const s = parseDT_(q.startDate, q.startTime);
@@ -270,6 +287,19 @@ function getAvailability(q) {
     info.vehicles.forEach(code => { (busy[code] = busy[code] || []).push(info); });
   });
 
+  const pending = {};
+  allRows_().forEach(r => {
+    if (String(r[16]) !== ST.WAIT) return;
+    const rs = new Date(r[6]), re = new Date(r[7]);
+    if (!(rs < e && re > s)) return;
+    const info = {
+      title: r[9] + '－' + r[3] + '（' + r[4] + '）',
+      start: fmt_(rs, 'MM/dd HH:mm'),
+      end: fmt_(re, 'MM/dd HH:mm'),
+    };
+    String(r[23] || '').split(',').filter(Boolean).forEach(code => { (pending[code] = pending[code] || []).push(info); });
+  });
+
   const dayStart = parseDT_(q.startDate, '00:00');
   const dayEnd = new Date(parseDT_(q.endDate, '00:00').getTime() + 24 * 3600 * 1000);
   const day = cal_().getEvents(dayStart, dayEnd)
@@ -278,15 +308,15 @@ function getAvailability(q) {
 
   return {
     ok: true,
-    vehicles: vehicles.map(v => Object.assign({}, v, { conflicts: busy[v.code] || [] })),
+    vehicles: vehicles.map(v => Object.assign({}, v, { conflicts: busy[v.code] || [], pending: pending[v.code] || [] })),
     day: day,
   };
 }
 
+/** 老師送出：只寫入試算表並產生申請單，狀態為「待審核」，不排行事曆。 */
 function submitBooking(f) {
   const email = requireUser_();
 
-  // ---- 檢查欄位 ----
   const need = ['name', 'dept', 'destination', 'purpose'];
   need.forEach(k => { if (!String(f[k] || '').trim()) throw new Error('請填寫所有必填欄位'); });
   const s = parseDT_(f.startDate, f.startTime);
@@ -311,17 +341,16 @@ function submitBooking(f) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    // ---- 送出當下再檢查一次衝突，避免兩人同時預約 ----
     const codes = chosen.map(v => v.code);
     const clash = overlapping_(s, e).filter(ev => eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
     if (clash.length) {
-      throw new Error('所選車輛在這個時段已被預約：' + clash.map(ev => ev.getTitle()).join('、') + '。請重新查詢後再送出。');
+      throw new Error('所選車輛在這個時段已有核准的派車：' + clash.map(ev => ev.getTitle()).join('、') + '。請重新查詢後再送出。');
     }
 
     const sheet = ss_().getSheetByName(CFG.SHEET_BOOKINGS);
     const now = new Date();
     const prefix = 'P' + (Number(fmt_(now, 'yyyy')) - 1911) + fmt_(now, 'MMdd') + '-';
-    const ids = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().map(r => String(r[0])) : [];
+    const ids = allRows_().map(r => String(r[0]));
     const seq = ids.filter(x => x.indexOf(prefix) === 0).length + 1;
     const id = prefix + ('00' + seq).slice(-3);
 
@@ -332,7 +361,6 @@ function submitBooking(f) {
       '申請日期': roc_(now),
       '申請人': f.name.trim(),
       '處室': f.dept.trim(),
-      'Email': email,
       '聯絡電話': String(f.phone || '').trim(),
       '用車時間': rocRange_(s, e),
       '集合地點': String(f.meet || '').trim() || '本校',
@@ -346,30 +374,6 @@ function submitBooking(f) {
       '備註': String(f.note || '').trim(),
     };
 
-    // ---- 行事曆 ----
-    const ev = cal_().createEvent(
-      '【' + codes.join('、') + '】' + data['目的地'] + '－' + data['申請人'] + '（' + data['處室'] + '）',
-      s, e,
-      {
-        location: data['目的地'],
-        description: [
-          '申請編號：' + id,
-          '事由：' + data['事由'],
-          '申請人：' + data['申請人'] + '（' + data['處室'] + '）' + email + ' ' + data['聯絡電話'],
-          '集合地點：' + data['集合地點'],
-          '人數：一般學生 ' + students + '、輪椅生 ' + wheel + '、隨行教師 ' + teachers + '，共 ' + total + ' 人',
-          '車輛：' + carText,
-          data['備註'] ? '備註：' + data['備註'] : '',
-        ].filter(Boolean).join('\n'),
-        guests: email,
-        sendInvites: false,
-      }
-    );
-    ev.setTag('vehicles', codes.join(','));
-    ev.setTag('bookingId', id);
-    ev.setTag('applicant', email);
-
-    // ---- 申請單（Google 文件 → Word） ----
     const docId = fillTemplate_(id + '_派車申請單_' + data['申請人'], data);
     const docx = exportBlob_(docId, 'docx', id + '_派車申請單.docx');
     const docxFile = DriveApp.getFolderById(prop_('DOCS_FOLDER_ID')).createFile(docx);
@@ -378,34 +382,107 @@ function submitBooking(f) {
       id, now, email, data['申請人'], data['處室'], data['聯絡電話'],
       s, e, data['集合地點'], data['目的地'], data['事由'],
       students, wheel, teachers, total, carText,
-      '已預約', ev.getId(), docId, docxFile.getId(), data['備註'],
+      ST.WAIT, '', docId, docxFile.getId(), data['備註'], '', '', codes.join(','),
     ]);
 
-    // ---- 寄信 ----
+    // 通知老師（確認信，尚未附 Word；核准後才附）
     let mailed = true;
     try {
-      const cc = splitEmails_(settings_()['通知副本Email']).filter(x => x !== email).join(',');
       MailApp.sendEmail({
         to: email,
-        cc: cc,
         name: '南特派車申請系統',
-        subject: '【派車預約成功】' + id + '｜' + rocRange_(s, e) + '｜' + data['目的地'],
-        htmlBody:
-          '<p>' + data['申請人'] + ' 老師您好：</p>' +
-          '<p>您的派車申請已預約成功，申請單 Word 檔已附在這封信中，請列印後依流程核章。</p>' +
-          '<table cellpadding="6" style="border-collapse:collapse;border:1px solid #ccc">' +
-          ['申請編號', '用車時間', '集合地點', '目的地', '事由', '車輛'].map(k =>
-            '<tr><td style="background:#f2f2f2;border:1px solid #ccc"><b>' + k + '</b></td><td style="border:1px solid #ccc">' + escapeHtml_(data[k]) + '</td></tr>').join('') +
-          '<tr><td style="background:#f2f2f2;border:1px solid #ccc"><b>人數</b></td><td style="border:1px solid #ccc">一般學生 ' + students + '、輪椅生 ' + wheel + '、隨行教師 ' + teachers + '，共 ' + total + ' 人</td></tr>' +
-          '</table><p style="color:#666">此信由系統自動寄出。如需取消，請到派車申請網頁的「我的申請」操作。</p>',
-        attachments: [docx],
+        subject: '【派車申請已送出】' + id + '｜' + rocRange_(s, e) + '｜' + data['目的地'],
+        htmlBody: '<p>' + escapeHtml_(data['申請人']) + ' 老師您好：</p>' +
+          '<p>您的派車申請已送出，目前為<b>待審核</b>狀態。總務處核准後，系統會寄出含申請單 Word 檔的通知，並排入派車行事曆。</p>' +
+          detailTable_({ id: id, s: s, e: e, meet: data['集合地點'], dest: data['目的地'], purpose: data['事由'], cars: carText, students: students, wheel: wheel, teachers: teachers, total: total }) +
+          '<p style="color:#666">此信由系統自動寄出。</p>',
       });
-    } catch (err) {
-      mailed = false;
-      console.error(err);
-    }
+    } catch (err) { mailed = false; console.error(err); }
+
+    // 通知總務處管理者
+    notifyAdmins_('【派車待審】' + id + '｜' + rocRange_(s, e) + '｜' + data['目的地'],
+      '<p>有新的派車申請待審核：</p>' +
+      detailTable_({ id: id, s: s, e: e, meet: data['集合地點'], dest: data['目的地'], purpose: data['事由'], cars: carText, students: students, wheel: wheel, teachers: teachers, total: total, who: data['申請人'] + '（' + data['處室'] + '）' }) +
+      '<p><a href="' + ScriptApp.getService().getUrl() + '">前往派車申請系統審核</a></p>');
 
     return { id: id, when: rocRange_(s, e), cars: carText, mailed: mailed };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 總務處核准：檢查衝突 → 建立行事曆 → 寄含 Word 的通知。 */
+function approveBooking(id) {
+  const adminEmail = requireAdmin_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const found = findRow_(id);
+    const r = found.r;
+    if (String(r[16]) !== ST.WAIT) throw new Error('這筆目前狀態為「' + r[16] + '」，無法核准。');
+
+    const s = new Date(r[6]), e = new Date(r[7]);
+    const codes = String(r[23] || '').split(',').filter(Boolean);
+    if (!codes.length) throw new Error('這筆申請沒有車輛代號，無法核准，請確認試算表。');
+    const vehicles = getVehicles_();
+    const clash = overlapping_(s, e).filter(ev => eventVehicles_(ev, vehicles).some(c => codes.indexOf(c) >= 0));
+    if (clash.length) {
+      throw new Error('核准失敗，所選車輛已有其他核准的派車：' + clash.map(ev => ev.getTitle()).join('、') + '。請退回此申請。');
+    }
+
+    const ev = cal_().createEvent(
+      '【' + codes.join('、') + '】' + r[9] + '－' + r[3] + '（' + r[4] + '）',
+      s, e,
+      {
+        location: String(r[9]),
+        description: [
+          '申請編號：' + r[0],
+          '事由：' + r[10],
+          '申請人：' + r[3] + '（' + r[4] + '）' + r[2] + ' ' + r[5],
+          '集合地點：' + r[8],
+          '人數：一般學生 ' + r[11] + '、輪椅生 ' + r[12] + '、隨行教師 ' + r[13] + '，共 ' + r[14] + ' 人',
+          '車輛：' + r[15],
+          r[20] ? '備註：' + r[20] : '',
+        ].filter(Boolean).join('\n'),
+        guests: String(r[2]),
+        sendInvites: false,
+      }
+    );
+    ev.setTag('vehicles', codes.join(','));
+    ev.setTag('bookingId', String(r[0]));
+
+    found.sheet.getRange(found.row, 17).setValue(ST.OK);
+    found.sheet.getRange(found.row, 18).setValue(ev.getId());
+    found.sheet.getRange(found.row, 22, 1, 2).setValues([[adminEmail, new Date()]]);
+
+    const wordFile = DriveApp.getFileById(String(r[19])).getBlob().setName(r[0] + '_派車申請單.docx');
+    mailTeacher_(r, '【派車已核准】' + r[0] + '｜' + rocRange_(s, e) + '｜' + r[9],
+      '您的派車申請已經<b>核准</b>，並已排入派車行事曆。申請單 Word 檔已附在這封信中，請列印後依流程核章。',
+      [wordFile]);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 總務處退回：寫入原因並寄信給老師。 */
+function rejectBooking(id, reason) {
+  const adminEmail = requireAdmin_();
+  reason = String(reason || '').trim();
+  if (!reason) throw new Error('請填寫退回原因。');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const found = findRow_(id);
+    const r = found.r;
+    if (String(r[16]) !== ST.WAIT) throw new Error('這筆目前狀態為「' + r[16] + '」，無法退回。');
+    found.sheet.getRange(found.row, 17).setValue(ST.BACK);
+    found.sheet.getRange(found.row, 21).setValue(String(r[20] || '') + (r[20] ? '；' : '') + '退回原因：' + reason);
+    found.sheet.getRange(found.row, 22, 1, 2).setValues([[adminEmail, new Date()]]);
+    mailTeacher_(r, '【派車申請已退回】' + r[0] + '｜' + r[9],
+      '很抱歉，您的派車申請<b>未能通過審核</b>。<br>退回原因：' + escapeHtml_(reason) + '<br>如需重新申請，請到派車申請網頁重新送出。',
+      []);
+    return true;
   } finally {
     lock.releaseLock();
   }
@@ -414,24 +491,26 @@ function submitBooking(f) {
 function listBookings(all) {
   const email = requireUser_();
   const admin = isAdmin_(email);
-  const sheet = ss_().getSheetByName(CFG.SHEET_BOOKINGS);
-  if (sheet.getLastRow() < 2) return { isAdmin: admin, rows: [] };
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, BOOKING_HEADERS.length).getValues();
   const now = new Date();
-  const rows = values
+  const rows = allRows_()
     .filter(r => (all && admin) || String(r[2]).toLowerCase() === email)
-    .map(r => ({
-      id: String(r[0]),
-      applicant: r[3] + '（' + r[4] + '）',
-      when: rocRange_(new Date(r[6]), new Date(r[7])),
-      start: new Date(r[6]).getTime(),
-      destination: String(r[9]),
-      purpose: String(r[10]),
-      people: '學生 ' + r[11] + '／輪椅 ' + r[12] + '／教師 ' + r[13],
-      cars: String(r[15]),
-      status: String(r[16]),
-      canCancel: String(r[16]) === '已預約' && new Date(r[6]) > now,
-    }))
+    .map(r => {
+      const st = String(r[16]);
+      const start = new Date(r[6]);
+      return {
+        id: String(r[0]),
+        applicant: r[3] + '（' + r[4] + '）',
+        when: rocRange_(start, new Date(r[7])),
+        start: start.getTime(),
+        destination: String(r[9]),
+        purpose: String(r[10]),
+        people: '學生 ' + r[11] + '／輪椅 ' + r[12] + '／教師 ' + r[13],
+        cars: String(r[15]),
+        status: st,
+        canCancel: (st === ST.WAIT || st === ST.OK) && start > now,
+        canReview: admin && st === ST.WAIT,
+      };
+    })
     .sort((a, b) => b.start - a.start)
     .slice(0, 200);
   return { isAdmin: admin, rows: rows };
@@ -474,22 +553,68 @@ function getBlankTemplate() {
   }
 }
 
+/** 取消：待審核直接取消；已核准則同時刪除行事曆活動。 */
 function cancelBooking(id) {
   const email = requireUser_();
   const found = findRow_(id);
   checkOwner_(email, found.r);
-  if (String(found.r[16]) !== '已預約') throw new Error('這筆申請目前狀態為「' + found.r[16] + '」，不能取消');
-  try {
-    const ev = cal_().getEventById(String(found.r[17]));
-    if (ev) ev.deleteEvent();
-  } catch (e) { console.error(e); }
-  found.sheet.getRange(found.row, 17).setValue('已取消');
+  const st = String(found.r[16]);
+  if (st !== ST.WAIT && st !== ST.OK) throw new Error('這筆申請目前狀態為「' + st + '」，不能取消。');
+  if (st === ST.OK && found.r[17]) {
+    try {
+      const ev = cal_().getEventById(String(found.r[17]));
+      if (ev) ev.deleteEvent();
+    } catch (e) { console.error(e); }
+  }
+  found.sheet.getRange(found.row, 17).setValue(ST.CANCEL);
   found.sheet.getRange(found.row, 21).setValue(
     String(found.r[20] || '') + (found.r[20] ? '；' : '') + '取消：' + email + ' ' + fmt_(new Date(), 'yyyy/MM/dd HH:mm'));
   return true;
 }
 
-/* ======================== 文件處理 ======================== */
+/* ======================== 信件與文件 ======================== */
+
+function detailTable_(d) {
+  const rows = [
+    ['申請編號', d.id],
+    ['用車時間', rocRange_(d.s, d.e)],
+    ['集合地點', d.meet],
+    ['目的地', d.dest],
+    ['事由', d.purpose],
+    ['車輛', d.cars],
+    ['人數', '一般學生 ' + d.students + '、輪椅生 ' + d.wheel + '、隨行教師 ' + d.teachers + '，共 ' + d.total + ' 人'],
+  ];
+  if (d.who) rows.splice(1, 0, ['申請人', d.who]);
+  return '<table cellpadding="6" style="border-collapse:collapse;border:1px solid #ccc">' +
+    rows.map(x => '<tr><td style="background:#f2f2f2;border:1px solid #ccc"><b>' + x[0] + '</b></td><td style="border:1px solid #ccc">' + escapeHtml_(x[1]) + '</td></tr>').join('') +
+    '</table>';
+}
+
+/** 寄信給申請老師（核准或退回）。r 為試算表那一列。 */
+function mailTeacher_(r, subject, leadHtml, attachments) {
+  try {
+    const cc = splitEmails_(settings_()['通知副本Email']).filter(x => x !== String(r[2]).toLowerCase()).join(',');
+    MailApp.sendEmail({
+      to: String(r[2]),
+      cc: cc,
+      name: '南特派車申請系統',
+      subject: subject,
+      htmlBody: '<p>' + escapeHtml_(r[3]) + ' 老師您好：</p><p>' + leadHtml + '</p>' +
+        detailTable_({ id: r[0], s: new Date(r[6]), e: new Date(r[7]), meet: r[8], dest: r[9], purpose: r[10], cars: r[15], students: r[11], wheel: r[12], teachers: r[13], total: r[14] }) +
+        '<p style="color:#666">此信由系統自動寄出。</p>',
+      attachments: attachments || [],
+    });
+    return true;
+  } catch (err) { console.error(err); return false; }
+}
+
+function notifyAdmins_(subject, html) {
+  const admins = splitEmails_(settings_()['管理者Email']);
+  if (!admins.length) return;
+  try {
+    MailApp.sendEmail({ to: admins.join(','), name: '南特派車申請系統', subject: subject, htmlBody: html });
+  } catch (err) { console.error(err); }
+}
 
 /** 複製範本並填入資料，回傳新文件 ID。blank=true 時把所有 {{欄位}} 清成空白。 */
 function fillTemplate_(name, data, blank) {
@@ -504,7 +629,7 @@ function fillTemplate_(name, data, blank) {
       Object.keys(data).forEach(k => {
         part.replaceText('\\{\\{' + k + '\\}\\}', String(data[k]).replace(/\$/g, '＄'));
       });
-      part.replaceText('\\{\\{[^}]*\\}\\}', ''); // 範本中未使用的欄位清空
+      part.replaceText('\\{\\{[^}]*\\}\\}', '');
     }
   });
   doc.saveAndClose();

@@ -54,6 +54,10 @@
   .tag.bad{background:var(--bad);color:#fff}
   .tag.gray{background:#eef0f3;color:var(--muted)}
   .conf{font-size:13px;color:var(--bad);margin-top:4px}
+  .pend{font-size:13px;color:var(--warn);margin-top:4px}
+  .st-wait{color:var(--warn);font-weight:700}
+  .calwrap{position:relative;width:100%;height:680px;background:#fff;border-radius:8px;overflow:hidden}
+  .calwrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
   .cap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
   .cap div{border-radius:8px;padding:8px 10px;font-size:14px}
   .cap .ok{background:var(--ok-soft);color:var(--ok)}
@@ -106,6 +110,7 @@
 
 <nav><div class="wrap">
   <button class="on" data-tab="new">新申請</button>
+  <button data-tab="cal">派車行事曆</button>
   <button data-tab="mine">我的申請</button>
   <button data-tab="all" class="hide" id="tabAll">全部申請（管理者）</button>
   <span class="spacer"></span>
@@ -207,8 +212,17 @@
 
       <div id="submitErr" class="msg bad hide"></div>
       <button class="btn big" id="btnSubmit" disabled>送出預約</button>
-      <p class="muted" style="text-align:center">送出後即預約成功，系統會寄送申請單 Word 檔到您的學校信箱。</p>
+      <p class="muted" style="text-align:center">送出後進入總務處審核，核准後才會排入派車行事曆，並寄出申請單 Word 檔到您的學校信箱。</p>
     </div>
+  </div>
+</section>
+
+<!-- ===== 派車行事曆（已核准） ===== -->
+<section id="tab-cal" class="hide">
+  <div class="card">
+    <h2>📅 派車行事曆</h2>
+    <p class="muted">這裡只顯示總務處已核准的派車。待審中的申請請到「我的申請」查看。</p>
+    <div class="calwrap"><iframe id="calFrame" scrolling="no"></iframe></div>
   </div>
 </section>
 
@@ -223,7 +237,7 @@
 </div></main>
 
 <div class="overlay" id="done"><div class="dialog">
-  <h3>✅ 預約成功</h3>
+  <h3>✅ 申請已送出</h3>
   <div id="doneInfo"></div>
   <div class="acts">
     <button class="btn" id="doneWord">⬇ 下載 Word</button>
@@ -287,7 +301,8 @@ async function init(){
     document.querySelector('main .wrap').innerHTML = '<div class="msg bad">' + esc(e.message) + '</div>';
     return;
   }
-  $('who').textContent = INIT.email + (INIT.isAdmin ? '（管理者）' : '');
+  $('who').textContent = INIT.email + (INIT.isAdmin ? '（總務處管理者）' : '');
+  $('calFrame').src = 'https://calendar.google.com/calendar/embed?src=' + encodeURIComponent(INIT.calId) + '&ctz=Asia%2FTaipei&mode=WEEK&showTitle=0&showPrint=0';
   if (INIT.isAdmin) $('tabAll').classList.remove('hide');
   $('startDate').value = $('endDate').value = INIT.today;
   $('startDate').min = $('endDate').min = INIT.today;
@@ -308,7 +323,8 @@ function renderCars(){
     if (isBusy) selected.delete(v.code);
     const sel = selected.has(v.code);
     const st = unknown ? '<span class="tag gray">待查詢</span>' : isBusy ? '<span class="tag bad">已被預約</span>' : '<span class="tag ok">可預約</span>';
-    const conf = isBusy ? v.conflicts.map(c => '<div class="conf">⛔ ' + esc(c.start) + '–' + esc(c.end.slice(-5)) + '　' + esc(c.title) + '</div>').join('') : '';
+    const conf = (isBusy ? v.conflicts.map(c => '<div class="conf">⛔ 已核准 ' + esc(c.start) + '–' + esc(c.end.slice(-5)) + '　' + esc(c.title) + '</div>').join('') : '') +
+      (v.pending || []).map(c => '<div class="pend">⏳ 待審 ' + esc(c.start) + '–' + esc(c.end.slice(-5)) + '　' + esc(c.title) + '</div>').join('');
     return '<label class="car ' + (isBusy ? 'busy' : unknown ? '' : 'free') + (sel ? ' sel' : '') + '">' +
       '<input type="checkbox" data-code="' + esc(v.code) + '"' + (sel ? ' checked' : '') + (isBusy || unknown ? ' disabled' : '') + '>' +
       '<div><div class="t">' + esc(v.name) + st + '</div>' +
@@ -390,7 +406,8 @@ async function submit(){
     lastId = r.id;
     $('doneInfo').innerHTML =
       '<p>申請編號：<b>' + esc(r.id) + '</b><br>用車時間：' + esc(r.when) + '<br>車輛：' + esc(r.cars) + '</p>' +
-      (r.mailed ? '<p class="muted">申請單 Word 檔已寄到您的學校信箱。</p>' : '<p class="msg warn">寄信失敗，請直接下載申請單。</p>');
+      '<p class="msg warn" style="margin:8px 0">目前為「待審核」。總務處核准後，行事曆會排入此派車，並寄出含 Word 的通知。</p>' +
+      (r.mailed ? '<p class="muted">已寄出確認信到您的學校信箱。</p>' : '<p class="msg warn">確認信寄送失敗，請直接下載申請單。</p>');
     $('done').classList.add('show');
     ['destination','purpose','note'].forEach(k => $(k).value = '');
     selected.clear();
@@ -416,8 +433,10 @@ async function loadList(all){
         '<td data-h="目的地"><b>' + esc(x.destination) + '</b><br><span class="muted">' + esc(x.purpose) + '</span></td>' +
         '<td data-h="人數">' + esc(x.people) + '</td>' +
         '<td data-h="車輛">' + esc(x.cars) + '</td>' +
-        '<td data-h="狀態" class="' + (x.status === '已預約' ? 'st-ok' : 'st-x') + '">' + esc(x.status) + '</td>' +
+        '<td data-h="狀態" class="' + (x.status === '已核准' ? 'st-ok' : x.status === '待審核' ? 'st-wait' : 'st-x') + '">' + esc(x.status) + '</td>' +
         '<td data-h="操作"><div class="acts">' +
+          (x.canReview ? '<button class="btn sm" data-act="approve" data-id="' + esc(x.id) + '">核准</button>' +
+                         '<button class="btn sm danger" data-act="reject" data-id="' + esc(x.id) + '">退回</button>' : '') +
           '<button class="btn sm ghost" data-act="word" data-id="' + esc(x.id) + '">Word</button>' +
           '<button class="btn sm ghost" data-act="print" data-id="' + esc(x.id) + '">列印</button>' +
           (x.canCancel ? '<button class="btn sm danger" data-act="cancel" data-id="' + esc(x.id) + '">取消</button>' : '') +
@@ -430,6 +449,19 @@ $('listBody').addEventListener('click', async ev => {
   const id = b.dataset.id;
   if (b.dataset.act === 'word') download(id);
   if (b.dataset.act === 'print') printForm(id);
+  if (b.dataset.act === 'approve'){
+    if (!confirm('核准 ' + id + '？核准後會排入派車行事曆，並寄出含 Word 的通知給申請老師。')) return;
+    busy(true, '核准中…');
+    try { await call('approveBooking', id); await loadList(listAll); }
+    catch(e){ alert(e.message); } finally { busy(false); }
+  }
+  if (b.dataset.act === 'reject'){
+    const reason = prompt('請填寫退回原因（會寄給申請老師）：');
+    if (!reason || !reason.trim()) return;
+    busy(true, '退回中…');
+    try { await call('rejectBooking', id, reason.trim()); await loadList(listAll); }
+    catch(e){ alert(e.message); } finally { busy(false); }
+  }
   if (b.dataset.act === 'cancel'){
     if (!confirm('確定要取消 ' + id + ' 嗎？行事曆上的預約也會一併刪除。')) return;
     busy(true, '取消中…');
@@ -443,8 +475,9 @@ document.querySelectorAll('nav button[data-tab]').forEach(b => b.addEventListene
   document.querySelectorAll('nav button[data-tab]').forEach(x => x.classList.toggle('on', x === b));
   const t = b.dataset.tab;
   $('tab-new').classList.toggle('hide', t !== 'new');
-  $('tab-list').classList.toggle('hide', t === 'new');
-  if (t !== 'new'){ listAll = t === 'all'; loadList(listAll); }
+  $('tab-cal').classList.toggle('hide', t !== 'cal');
+  $('tab-list').classList.toggle('hide', t !== 'mine' && t !== 'all');
+  if (t === 'mine' || t === 'all'){ listAll = t === 'all'; loadList(listAll); }
 }));
 $('startDate').addEventListener('change', () => {
   if (!$('endDate').value || $('endDate').value < $('startDate').value) $('endDate').value = $('startDate').value;
